@@ -70,10 +70,17 @@ function buildDependencySummary(deps: ExternalDependencyMock[]): string {
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
+export interface GenerateMockPlanOptions {
+  /** User's palette choices (e.g. user_count=5, invoice_status=sent) — tailor seed data and stubs to these. */
+  paletteValues?: Record<string, string | number | boolean>;
+}
+
 export async function generateMockPlan(
-  analysis: DockerSandboxAnalysis
+  analysis: DockerSandboxAnalysis,
+  options?: GenerateMockPlanOptions
 ): Promise<MockPlan> {
   const { externalDependencies, summary } = analysis;
+  const paletteValues = options?.paletteValues;
 
   if (externalDependencies.length === 0) {
     return {
@@ -83,6 +90,13 @@ export async function generateMockPlan(
       allEnvOverrides: [],
     };
   }
+
+  const paletteSection =
+    paletteValues && Object.keys(paletteValues).length > 0
+      ? `\nUSER PALETTE CHOICES (tailor seed data and stub responses to these):\n${Object.entries(paletteValues)
+          .map(([k, v]) => `  ${k}: ${v}`)
+          .join("\n")}\n`
+      : "";
 
   const response = await client.chat.completions.create({
     model: "openai/gpt-oss-120b",
@@ -96,7 +110,7 @@ export async function generateMockPlan(
       {
         role: "user",
         content: `Generate a complete mock plan for this repo's sandbox environment.
-
+${paletteSection}
 REPO: ${summary.repo}
 BRANCH: ${summary.branch}
 FRAMEWORKS: ${summary.frameworks.join(", ")}
@@ -221,6 +235,7 @@ Return exactly this JSON structure:
 }
 
 Rules:
+- If USER PALETTE CHOICES are provided, use them to tailor seed data (e.g. record counts, status values, toggles) and stub responses so the demo matches the user's choices.
 - Seed data must be realistic and specific — infer from repo name and frameworks
 - Every envOverride value must be obviously fake (contain "sandbox", "test", "local", or "mock")
 - stubRoutes responseBody must be a valid JSON string (properly escaped)

@@ -12,7 +12,7 @@ export async function analyseRepo(context: {
   topics: string[];
   tree: string;
   files: string;
-}) {
+}): Promise<Record<string, unknown>> {
   const response = await client.chat.completions.create({
     model: "openai/gpt-oss-120b",
     max_tokens: 8000,
@@ -97,9 +97,34 @@ Rules:
 
   const raw = response.choices[0]?.message?.content || "";
 
+  function extractAndParseJson(text: string): unknown {
+    let s = text.trim();
+    // Strip markdown code fences (```json ... ``` or ``` ... ```)
+    s = s.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/gm, "").trim();
+    // If there's still leading/trailing text, try to find the JSON object by matching braces
+    const firstBrace = s.indexOf("{");
+    if (firstBrace !== -1) {
+      let depth = 0;
+      for (let i = firstBrace; i < s.length; i++) {
+        const c = s[i];
+        if (c === "{" || c === "[") depth++;
+        else if (c === "}" || c === "]") {
+          depth--;
+          if (depth === 0) {
+            s = s.slice(firstBrace, i + 1);
+            break;
+          }
+        }
+      }
+    }
+    // Remove trailing commas before ] or } (common LLM mistake)
+    s = s.replace(/,(\s*[}\]])/g, "$1");
+    return JSON.parse(s);
+  }
+
   try {
-    return JSON.parse(raw.replace(/^```json\n?|^```\n?|```$/gm, "").trim());
-  } catch {
-    throw new Error("AI returned invalid JSON: " + raw.slice(0, 200));
+    return extractAndParseJson(raw) as Record<string, unknown>;
+  } catch (e) {
+    throw new Error("AI returned invalid JSON: " + raw.slice(0, 200) + (e instanceof Error ? " — " + e.message : ""));
   }
 } 

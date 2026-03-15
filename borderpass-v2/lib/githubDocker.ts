@@ -101,9 +101,24 @@ async function fetchDefaultBranch(owner: string, repo: string): Promise<string> 
     headers: getGitHubHeaders(),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`Failed to fetch repo metadata: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text();
+    let message = `Failed to fetch repo metadata: ${res.status}`;
+    if (res.status === 403) {
+      try {
+        const json = JSON.parse(body);
+        if (json.message) message += ` — ${json.message}`;
+      } catch {
+        // ignore parse error
+      }
+      if (!process.env.GITHUB_TOKEN) {
+        message += ". Set GITHUB_TOKEN in .env for higher rate limits and private repo access.";
+      }
+    }
+    throw new Error(message);
+  }
   const data = await res.json();
-  return data.default_branch;
+  return data.default_branch ?? "main";
 }
 
 async function fetchRepoTree(

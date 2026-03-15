@@ -26,7 +26,7 @@ export default function PalettePage() {
 
   function handleLaunch() {
     setPaletteValues(values);
-    router.push("/walkthrough");
+    router.push("/generate");
   }
 
   if (!result || !paletteConfig) return null;
@@ -157,7 +157,7 @@ export default function PalettePage() {
             onClick={handleLaunch}
             className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
           >
-            Generate walkthrough →
+            Continue to generate →
           </button>
         </div>
       </div>
