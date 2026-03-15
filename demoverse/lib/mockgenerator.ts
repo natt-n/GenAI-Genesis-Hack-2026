@@ -247,21 +247,109 @@ Rules:
 
   const raw = response.choices[0]?.message?.content || "";
 
+  function stripControlChars(str: string): string {
+    return str.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+  }
+
+  function preprocess(text: string): string {
+    let s = stripControlChars(text).trim();
+    s = s.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/gm, "").trim();
+    const firstBrace = s.indexOf("{");
+    if (firstBrace !== -1) {
+      let depth = 0;
+      for (let i = firstBrace; i < s.length; i++) {
+        const c = s[i];
+        if (c === "{" || c === "[") depth++;
+        else if (c === "}" || c === "]") {
+          depth--;
+          if (depth === 0) {
+            s = s.slice(firstBrace, i + 1);
+            break;
+          }
+        }
+      }
+    }
+    return s.replace(/,(\s*[}\]])/g, "$1");
+  }
+
+  /** On "Unterminated string", truncate at position and try to close the JSON. */
+  function tryRecoverUnterminated(s: string, err: Error): Omit<MockPlan, "allEnvOverrides"> | null {
+    const match = err.message.match(/position (\d+)/);
+    if (!match) return null;
+    const pos = Math.min(parseInt(match[1], 10), s.length);
+    const truncated = s.slice(0, pos);
+    const closeString = '"';
+
+    function tryParse(suffix: string): Omit<MockPlan, "allEnvOverrides"> | null {
+      try {
+        const parsed = JSON.parse(truncated + suffix) as Omit<MockPlan, "allEnvOverrides">;
+        return parsed && Array.isArray(parsed.serviceMocks) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+
+    // Order 1: ] then } (e.g. inside array then object)
+    for (let ij = 0; ij <= 20; ij++) {
+      for (let j = 1; j <= 20; j++) {
+        const r = tryParse(closeString + "]".repeat(ij) + "}".repeat(j));
+        if (r) return r;
+      }
+    }
+    // Order 2: } then ] alternating (e.g. inside object "value": "" then } ] } ] } to close object, array, object, array, root)
+    for (let len = 1; len <= 25; len++) {
+      let suffix = closeString;
+      let next: "}" | "]" = "}";
+      for (let i = 0; i < len; i++) {
+        suffix += next;
+        next = next === "}" ? "]" : "}";
+      }
+      const r = tryParse(suffix);
+      if (r) return r;
+    }
+    // Order 3: } only then ] only
+    for (let j = 1; j <= 20; j++) {
+      for (let ij = 0; ij <= 20; ij++) {
+        const r = tryParse(closeString + "}".repeat(j) + "]".repeat(ij));
+        if (r) return r;
+      }
+    }
+    return null;
+  }
+
   let parsed: Omit<MockPlan, "allEnvOverrides">;
   try {
-    parsed = JSON.parse(raw.replace(/^```json\n?|^```\n?|```$/gm, "").trim());
-  } catch {
-    throw new Error("mockGenerator returned invalid JSON: " + raw.slice(0, 300));
+    parsed = JSON.parse(preprocess(raw)) as Omit<MockPlan, "allEnvOverrides">;
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    const preprocessed = preprocess(raw);
+    const recovered = tryRecoverUnterminated(preprocessed, err);
+    if (recovered !== null) {
+      parsed = recovered;
+    } else {
+      throw new Error("mockGenerator returned invalid JSON: " + raw.slice(0, 300) + " — " + err.message);
+    }
   }
+
+  if (!parsed.serviceMocks || !Array.isArray(parsed.serviceMocks)) {
+    parsed.serviceMocks = [];
+  }
+  // Sanitize partial mocks (e.g. envOverrides may be incomplete)
+  parsed.serviceMocks = parsed.serviceMocks.map((m) => ({
+    ...m,
+    envOverrides: Array.isArray(m.envOverrides) ? m.envOverrides.filter((e) => e && typeof e.key === "string") : [],
+    seedFiles: Array.isArray(m.seedFiles) ? m.seedFiles : [],
+    stubRoutes: Array.isArray(m.stubRoutes) ? m.stubRoutes : [],
+  }));
 
   // Build flat deduplicated env list for dockerfileGenerator
   const seen = new Set<string>();
   const allEnvOverrides: EnvMock[] = [];
   for (const mock of parsed.serviceMocks) {
     for (const env of mock.envOverrides) {
-      if (!seen.has(env.key)) {
+      if (env.value !== undefined && typeof env.value === "string" && !seen.has(env.key)) {
         seen.add(env.key);
-        allEnvOverrides.push(env);
+        allEnvOverrides.push({ key: env.key, value: env.value, comment: env.comment || "" });
       }
     }
   }
