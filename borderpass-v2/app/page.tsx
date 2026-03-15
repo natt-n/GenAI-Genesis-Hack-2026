@@ -1,57 +1,90 @@
 "use client";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSessionStore } from "@/store/session";
 
 export default function Home() {
   const router = useRouter();
-  const { setSessionId, setRepoUrl, setResult } = useSessionStore();
-  const [url, setUrl] = useState("https://github.com/akashngb/roots");
+
+  const { setSessionId, setRepoUrl, setResult, setDockerResult } =
+    useSessionStore();
+
+  const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
   async function handleSubmit() {
     if (!url.trim()) return;
+
     setLoading(true);
     setError("");
 
     const steps = [
       "Fetching repo files...",
       "Reading README and routes...",
-      "Analysing with AI...",
-      "Building scenario map...",
+      "Analysing product functionality...",
+      "Analysing docker sandbox requirements...",
+      "Finding external dependencies to mock...",
+      "Preparing scenario map...",
     ];
 
     let i = 0;
     setStatus(steps[0]);
+
     const interval = setInterval(() => {
       i++;
       if (i < steps.length) setStatus(steps[i]);
-    }, 4000);
+    }, 3000);
 
     try {
-      const res = await fetch("/api/analyse", {
+      const analyseRes = await fetch("/api/analyse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repoUrl: url }),
       });
 
-      const data = await res.json();
+      const analyseData = await analyseRes.json();
+
+      if (!analyseRes.ok) {
+        throw new Error(analyseData.error || "Analysis failed");
+      }
+
+      setStatus("Analysing docker sandbox requirements...");
+
+      const dockerRes = await fetch("/api/dockeranalyse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoUrl: url,
+          sessionId: analyseData.sessionId,
+        }),
+      });
+
+      const dockerData = await dockerRes.json();
+
       clearInterval(interval);
 
-      if (!res.ok) throw new Error(data.error || "Analysis failed");
+      if (!dockerRes.ok) {
+        throw new Error(dockerData.error || "Docker analysis failed");
+      }
 
-      setSessionId(data.sessionId);
+      setSessionId(analyseData.sessionId);
       setRepoUrl(url);
-      setResult(data.result);
-      router.push(`/scenarios?session=${data.sessionId}`);
+      setResult(analyseData.result ?? null);
+      setDockerResult(dockerData.result ?? null);
+
+      router.push(`/scenarios?session=${analyseData.sessionId}`);
     } catch (err: any) {
       clearInterval(interval);
-      setError(err.message);
-      setLoading(false);
+      setError(err.message || "Something went wrong");
       setStatus("");
+      setLoading(false);
+      return;
     }
+
+    setLoading(false);
   }
 
   return (
@@ -68,6 +101,7 @@ export default function Home() {
           <label className="block text-sm text-gray-400 mb-2 font-mono">
             GITHUB REPO URL
           </label>
+
           <input
             type="text"
             value={url}

@@ -64,4 +64,4 @@ export async function collectContext(owner: string, repo: string) {
     tree: tree.slice(0, 100).join("\n"),
     files: contents.filter(Boolean).join(""),
   };
-}
+} 

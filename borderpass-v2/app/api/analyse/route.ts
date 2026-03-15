@@ -3,7 +3,7 @@ import { parseRepoUrl, collectContext } from "@/lib/github";
 import { analyseRepo } from "@/lib/ai";
 import { supabaseAdmin } from "@/lib/supabase";
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest) { 
   try {
     const { repoUrl } = await req.json();
     if (!repoUrl) {
@@ -19,7 +19,16 @@ export async function POST(req: NextRequest) {
 
     const { data: session, error } = await supabaseAdmin
       .from("sessions")
-      .insert({ repo_url: repoUrl, analysis_result: result })
+      .insert({
+        repo_url: repoUrl,
+        repo_owner: owner,
+        repo_name: repo,
+        repo_context: context,
+        analysis_result: result,
+        docker_repo_context: null,
+        docker_analysis_result: null,
+        sandbox_html: result.sandbox_html ?? null,
+      })
       .select()
       .single();
 
