@@ -80,28 +80,28 @@ Return exactly this JSON structure:
       "route": "/example",
       "highlight": "what element to draw attention to"
     }
-  ],
-  "sandbox_html": "FULL self-contained HTML page simulating this product dashboard. Inline CSS and JS only. Realistic navigation and data. Must look like a real product. At least 400 lines."
+  ]
 }
 
 Rules:
 - Maximum 8 features
 - Maximum 10 palette_controls
 - Maximum 6 walkthrough_steps
-- sandbox_html must be a COMPLETE working HTML page
 - Use realistic synthetic data — no Lorem Ipsum or John Doe
-- Return ONLY valid JSON`,
+- Return ONLY valid JSON. Do not add any field not listed above.`,
       },
     ],
   });
 
   const raw = response.choices[0]?.message?.content || "";
 
-  function extractAndParseJson(text: string): unknown {
-    let s = text.trim();
-    // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  function stripControlChars(str: string): string {
+    return str.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+  }
+
+  function preprocess(text: string): string {
+    let s = stripControlChars(text).trim();
     s = s.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/gm, "").trim();
-    // If there's still leading/trailing text, try to find the JSON object by matching braces
     const firstBrace = s.indexOf("{");
     if (firstBrace !== -1) {
       let depth = 0;
@@ -117,14 +117,48 @@ Rules:
         }
       }
     }
-    // Remove trailing commas before ] or } (common LLM mistake)
-    s = s.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(s);
+    return s.replace(/,(\s*[}\]])/g, "$1");
+  }
+
+  function extractAndParseJson(text: string): unknown {
+    return JSON.parse(preprocess(text));
+  }
+
+  /** On "Unterminated string", truncate at position and try to close the string and structure. */
+  function tryRecoverUnterminated(s: string, err: Error): Record<string, unknown> | null {
+    const match = err.message.match(/position (\d+)/);
+    if (!match) return null;
+    const pos = Math.min(parseInt(match[1], 10), s.length);
+    const truncated = s.slice(0, pos);
+    // We're inside a string; close it with "
+    const closeString = '"';
+    // Try different numbers of ] and } to close arrays/objects (nesting is unknown)
+    for (let ij = 0; ij <= 20; ij++) {
+      for (let j = 1; j <= 20; j++) {
+        const suffix = closeString + "]".repeat(ij) + "}".repeat(j);
+        try {
+          const parsed = JSON.parse(truncated + suffix) as Record<string, unknown>;
+          return parsed;
+        } catch {
+          /* try next */
+        }
+      }
+    }
+    return null;
   }
 
   try {
-    return extractAndParseJson(raw) as Record<string, unknown>;
+    const result = extractAndParseJson(raw) as Record<string, unknown>;
+    result.sandbox_html = "";
+    return result;
   } catch (e) {
-    throw new Error("AI returned invalid JSON: " + raw.slice(0, 200) + (e instanceof Error ? " — " + e.message : ""));
+    const err = e instanceof Error ? e : new Error(String(e));
+    const preprocessed = preprocess(raw);
+    const recovered = tryRecoverUnterminated(preprocessed, err);
+    if (recovered !== null) {
+      recovered.sandbox_html = "";
+      return recovered;
+    }
+    throw new Error("AI returned invalid JSON: " + raw.slice(0, 300) + " — " + err.message);
   }
 } 

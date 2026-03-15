@@ -91,9 +91,10 @@ export default function Home() {
     <main className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center p-8">
       <div className="max-w-xl w-full">
         <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold mb-3">BorderPass</h1>
+          <h1 className="text-4xl font-bold mb-3">DemoVerse</h1>
           <p className="text-gray-400 text-lg">
-            Paste a GitHub repo. Get a live demo sandbox in minutes.
+            Paste a GitHub repo. Get a live demo sandbox in minutes!
+            Discover your product's demoverse. 
           </p>
         </div>
 

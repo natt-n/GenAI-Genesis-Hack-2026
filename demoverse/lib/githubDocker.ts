@@ -83,7 +83,7 @@ const SOURCE_SAMPLE_LIMIT = 30;
 // GitHub API helpers
 // ---------------------------------------------------------------------------
 function getGitHubHeaders(): HeadersInit {
-  const token = process.env.GITHUB_TOKEN;
+  const token = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT;
   return {
     Accept: "application/vnd.github+json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -111,8 +111,8 @@ async function fetchDefaultBranch(owner: string, repo: string): Promise<string> 
       } catch {
         // ignore parse error
       }
-      if (!process.env.GITHUB_TOKEN) {
-        message += ". Set GITHUB_TOKEN in .env for higher rate limits and private repo access.";
+      if (!process.env.GITHUB_TOKEN && !process.env.GITHUB_PAT) {
+        message += ". Set GITHUB_TOKEN or GITHUB_PAT in .env.local for higher rate limits and private repo access.";
       }
     }
     throw new Error(message);
