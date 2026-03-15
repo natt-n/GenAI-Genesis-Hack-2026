@@ -6,7 +6,9 @@ import { useSessionStore } from "@/store/session";
 
 export default function Home() {
   const router = useRouter();
-  const { setAnalysisPayload, reset } = useSessionStore();
+
+  const { setSessionId, setRepoUrl, setResult, setDockerResult } =
+    useSessionStore();
 
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,63 +20,71 @@ export default function Home() {
 
     setLoading(true);
     setError("");
-    setStatus("");
-    reset();
-
-    const normalizedUrl = url.trim();
 
     const steps = [
       "Fetching repo files...",
-      "Reading manifests, routes, and models...",
-      "Analysing business capabilities...",
-      "Detecting runtime and external services...",
-      "Preparing sandbox options...",
+      "Reading README and routes...",
+      "Analysing product functionality...",
+      "Analysing docker sandbox requirements...",
+      "Finding external dependencies to mock...",
+      "Preparing scenario map...",
     ];
 
     let i = 0;
     setStatus(steps[0]);
 
     const interval = setInterval(() => {
-      i += 1;
+      i++;
       if (i < steps.length) setStatus(steps[i]);
-    }, 2200);
+    }, 3000);
 
     try {
-      const res = await fetch("/api/analyse", {
+      const analyseRes = await fetch("/api/analyse", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ repoUrl: normalizedUrl }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repoUrl: url }),
       });
 
-      const data = await res.json();
-      clearInterval(interval);
+      const analyseData = await analyseRes.json();
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Analysis failed");
+      if (!analyseRes.ok) {
+        throw new Error(analyseData.error || "Analysis failed");
       }
 
-      setAnalysisPayload({
-        sessionId: data.sessionId,
-        repoUrl: normalizedUrl,
-        result: data.result ?? null,
-        buildPlan: data.buildPlan ?? null,
-        dockerfile: data.dockerfile ?? null,
-        composeFile: data.composeFile ?? null,
-        mockManifest: data.mockManifest ?? null,
-        dockerStatus: data.dockerStatus ?? null,
+      setStatus("Analysing docker sandbox requirements...");
+
+      const dockerRes = await fetch("/api/dockeranalyse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoUrl: url,
+          sessionId: analyseData.sessionId,
+        }),
       });
 
-      setStatus("");
-      router.push(`/scenarios?session=${data.sessionId}`);
+      const dockerData = await dockerRes.json();
+
+      clearInterval(interval);
+
+      if (!dockerRes.ok) {
+        throw new Error(dockerData.error || "Docker analysis failed");
+      }
+
+      setSessionId(analyseData.sessionId);
+      setRepoUrl(url);
+      setResult(analyseData.result ?? null);
+      setDockerResult(dockerData.result ?? null);
+
+      router.push(`/scenarios?session=${analyseData.sessionId}`);
     } catch (err: any) {
       clearInterval(interval);
-      setError(err?.message || "Something went wrong");
+      setError(err.message || "Something went wrong");
       setStatus("");
-    } finally {
       setLoading(false);
+      return;
     }
+
+    setLoading(false);
   }
 
   return (
@@ -83,8 +93,7 @@ export default function Home() {
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold mb-3">BorderPass</h1>
           <p className="text-gray-400 text-lg">
-            Paste a GitHub repo. Analyse the app, choose features, then launch a
-            tailored demo sandbox.
+            Paste a GitHub repo. Get a live demo sandbox in minutes.
           </p>
         </div>
 
@@ -107,13 +116,13 @@ export default function Home() {
             disabled={loading || !url.trim()}
             className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors"
           >
-            {loading ? "Analysing repo..." : "Analyse repo →"}
+            {loading ? "Analysing..." : "Analyse repo →"}
           </button>
 
           {status && (
             <div className="mt-4 flex items-center gap-3 text-sm text-gray-400">
               <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-              <span>{status}</span>
+              {status}
             </div>
           )}
 
@@ -124,10 +133,9 @@ export default function Home() {
           )}
         </div>
 
-        <div className="mt-6 text-center text-sm text-gray-600">
-          Analyse first. Docker sandbox is finalized after feature selection and
-          palette configuration.
-        </div>
+        <p className="text-center text-gray-600 text-sm mt-6">
+          Works with Next.js, React, Rails, Django, and Express web apps
+        </p>
       </div>
     </main>
   );

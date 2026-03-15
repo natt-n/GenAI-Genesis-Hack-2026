@@ -23,7 +23,7 @@ async function getContent(owner: string, repo: string, path: string) {
   }
 }
 
-export async function collectOldContext(owner: string, repo: string) {
+export async function collectContext(owner: string, repo: string) {
   const [meta, treeData] = await Promise.all([
     gh(`/repos/${owner}/${repo}`),
     gh(`/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`),
@@ -64,4 +64,4 @@ export async function collectOldContext(owner: string, repo: string) {
     tree: tree.slice(0, 100).join("\n"),
     files: contents.filter(Boolean).join(""),
   };
-}
+} 
